@@ -1,0 +1,1 @@
+Extracts data from Daktela API v6 including activities, contacts, tickets, users, queues, and campaigns
