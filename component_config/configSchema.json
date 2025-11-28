@@ -1,0 +1,70 @@
+{
+  "type": "object",
+  "title": "Daktela Extractor Configuration",
+  "required": [
+    "username",
+    "#password",
+    "from",
+    "to",
+    "tables"
+  ],
+  "properties": {
+    "username": {
+      "type": "string",
+      "title": "Username",
+      "description": "Daktela account username",
+      "propertyOrder": 1
+    },
+    "#password": {
+      "type": "string",
+      "title": "Password",
+      "format": "password",
+      "description": "Daktela account password",
+      "propertyOrder": 2
+    },
+    "url": {
+      "type": "string",
+      "title": "URL",
+      "description": "Full Daktela instance URL (e.g., https://mycompany.daktela.com). Either URL or Server is required.",
+      "propertyOrder": 3
+    },
+    "server": {
+      "type": "string",
+      "title": "Server",
+      "description": "Daktela server name (e.g., mycompany). Will be converted to https://mycompany.daktela.com. Either URL or Server is required.",
+      "propertyOrder": 4
+    },
+    "from": {
+      "type": "string",
+      "title": "From Date",
+      "description": "Start date for data extraction. Supported formats: 'today' or '0' (current time minus 30 minutes), negative integer (e.g., '-7' for 7 days ago), or 'YYYY-MM-DD'.",
+      "propertyOrder": 5
+    },
+    "to": {
+      "type": "string",
+      "title": "To Date",
+      "description": "End date for data extraction. Supported formats: 'today' or '0' (current time minus 30 minutes), negative integer (e.g., '-1' for yesterday), or 'YYYY-MM-DD'.",
+      "propertyOrder": 6
+    },
+    "tables": {
+      "type": "string",
+      "title": "Tables",
+      "description": "Comma-separated list of tables to extract (e.g., 'activities,contacts,tickets,users,queues,campaigns').",
+      "propertyOrder": 7
+    },
+    "incremental": {
+      "type": "boolean",
+      "title": "Incremental Load",
+      "description": "If enabled, new data will be appended to existing tables. If disabled, existing data will be replaced.",
+      "default": false,
+      "propertyOrder": 8
+    },
+    "debug": {
+      "type": "boolean",
+      "title": "Debug Mode",
+      "description": "Enable verbose logging for debugging purposes.",
+      "default": false,
+      "propertyOrder": 9
+    }
+  }
+}

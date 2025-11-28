@@ -1,0 +1,1 @@
+Keboola extractor component for Daktela CRM/Contact Center system
