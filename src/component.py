@@ -5,51 +5,31 @@ Extracts data from Daktela CRM/Contact Center system via API v6.
 """
 
 import asyncio
-import json
+import csv
 import logging
-import os
+import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-import pandas as pd
 from keboola.component.base import ComponentBase
 from keboola.component.exceptions import UserException
+from keboola.csvwriter import ElasticDictWriter
 
 from configuration import Configuration
 from daktela_client import DaktelaClient
 from data_transformer import DataTransformer
-from table_config import DEFAULT_TABLE_CONFIGS, TableConfig, get_table_config
-
-# Table descriptions for the UI
-TABLE_DESCRIPTIONS = {
-    "activities": "User activities and interactions",
-    "activities_statuses": "Activity status history",
-    "activities_call": "Call-specific activity data",
-    "activities_email": "Email-specific activity data",
-    "activities_chat": "Chat-specific activity data",
-    "contacts": "CRM contacts",
-    "tickets": "Support tickets",
-    "users": "Daktela users/agents",
-    "queues": "Call queues",
-    "campaigns": "Outbound campaigns",
-    "accounts": "Customer accounts",
-    "statuses": "Status definitions",
-    "categories": "Category definitions",
-    "records": "Call recordings metadata",
-}
-
+from table_config import TableConfig, get_table_config
 
 class Component(ComponentBase):
     """
     Daktela Extractor Component.
 
-    Extracts data from Daktela API v6 and produces CSV output compatible
-    with the existing revolt-bi.app-daktela component.
+    Extracts data from Daktela API v6 and produces CSV output.
     """
 
-    SPECIAL_TABLES = {"activities", "activities_statuses"}
-    TABLES_WITH_REQUIREMENTS = {
+    SPECIAL_TABLES: set[str] = {"activities", "activities_statuses"}
+    TABLES_WITH_REQUIREMENTS: set[str] = {
         "activities_call", "activities_email", "activities_chat"
     }
 
@@ -57,95 +37,61 @@ class Component(ComponentBase):
         super().__init__()
         self.config: Optional[Configuration] = None
         self.server_name: str = ""
-        self.extracted_data: dict[str, pd.DataFrame] = {}
+        self.extracted_parent_ids: dict[str, dict[str, set[str]]] = {}
         self.invalid_activities: list[str] = []
 
-    def run(self):
-        """Main execution code"""
+    def run(self) -> None:
+        """Main execution code."""
         start_time = time.time()
 
         self._init_configuration()
         self._validate_configuration()
 
+        # Load state for incremental processing
+        state = self.get_state_file()
+        logging.info(f"Loaded state: {state}")
+
         asyncio.run(self._extract_all_tables())
+
+        # Save state for next run
+        new_state = {
+            "last_run": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "tables_extracted": self.config.get_table_list()
+        }
+        self.write_state_file(new_state)
+        logging.info(f"Saved state: {new_state}")
 
         elapsed = time.time() - start_time
         logging.info(f"Elapsed time of extraction: {elapsed:.2f} seconds.")
 
-    def load_tables(self):
-        """
-        Sync action to load available tables for the UI multi-select.
-
-        Returns a list of available tables with their descriptions.
-        """
-        tables = []
-        for table_name in sorted(DEFAULT_TABLE_CONFIGS.keys()):
-            description = TABLE_DESCRIPTIONS.get(table_name, table_name)
-            tables.append({
-                "value": table_name,
-                "label": f"{table_name} - {description}"
-            })
-        return {"status": "success", "data": tables}
-
     def _init_configuration(self) -> None:
+        """Initialize configuration from parameters."""
         self.config = Configuration(**self.configuration.parameters)
         self.server_name = self.config.get_server_name()
 
-        image_params = self.configuration.image_parameters or {}
-        self.custom_table_configs = self._get_custom_table_configs(image_params)
-
         if self.config.debug:
             logging.getLogger().setLevel(logging.DEBUG)
+            logging.debug("Debug mode enabled")
 
     def _validate_configuration(self) -> None:
+        """Validate configuration parameters."""
         self.config.validate_date_range()
 
         requested_tables = self.config.get_table_list()
         for table_name in requested_tables:
-            table_config = get_table_config(table_name, self.custom_table_configs)
+            table_config = get_table_config(table_name)
             if not table_config:
                 logging.warning(f"Table '{table_name}' is not configured. Skipping.")
 
-    def _get_custom_table_configs(self, image_params: dict) -> Optional[dict]:
-        fields_list = image_params.get("fields", [])
-        if not fields_list:
-            return None
-
-        project_id = os.environ.get("KBC_PROJECTID", "")
-        stack_id = os.environ.get("KBC_STACKID", "")
-        full_project_id = f"{stack_id}-{project_id}" if stack_id and project_id else ""
-
-        default_config = None
-        project_config = None
-
-        for field_config in fields_list:
-            name = field_config.get("name", "")
-            project_ids = field_config.get("project_ids", [])
-
-            if name == "default":
-                default_config = field_config.get("columns", {})
-            elif full_project_id and full_project_id in project_ids:
-                project_config = field_config.get("columns", {})
-
-        if project_config and default_config:
-            merged = default_config.copy()
-            merged.update(project_config)
-            return merged
-        elif project_config:
-            return project_config
-        elif default_config:
-            return default_config
-
-        return None
-
     async def _extract_all_tables(self) -> None:
+        """Extract all requested tables."""
         requested_tables = self.config.get_table_list()
 
         tables_without_requirements = []
         tables_with_requirements = []
 
         for table_name in requested_tables:
-            table_config = get_table_config(table_name, self.custom_table_configs)
+            table_config = get_table_config(table_name)
             if not table_config:
                 continue
 
@@ -159,9 +105,11 @@ class Component(ComponentBase):
             self.config.username,
             self.config.password
         ) as client:
+            # Extract independent tables
             for table_name in tables_without_requirements:
                 await self._extract_table(client, table_name)
 
+            # Extract special tables (activities, activities_statuses)
             special_tables_to_extract = [
                 t for t in ["activities", "activities_statuses"]
                 if t in tables_with_requirements
@@ -169,6 +117,7 @@ class Component(ComponentBase):
             for table_name in special_tables_to_extract:
                 await self._extract_table(client, table_name)
 
+            # Extract child tables that depend on parent tables
             remaining_tables = [
                 t for t in tables_with_requirements
                 if t not in self.SPECIAL_TABLES
@@ -177,7 +126,8 @@ class Component(ComponentBase):
                 await self._extract_child_table(client, table_name)
 
     async def _extract_table(self, client: DaktelaClient, table_name: str) -> None:
-        table_config = get_table_config(table_name, self.custom_table_configs)
+        """Extract a standard table."""
+        table_config = get_table_config(table_name)
         if not table_config:
             return
 
@@ -193,21 +143,17 @@ class Component(ComponentBase):
         )
 
         transformer = DataTransformer(self.server_name, table_config)
-        df = transformer.transform(data)
+        transformed_data = transformer.transform(data)
 
-        if table_name == "activities":
-            self._track_invalid_activities(df, table_config)
-            if "name" in df.columns:
-                df = df.rename(columns={"name": "activities_name"})
-
-        self._write_output(table_name, df)
-        self.extracted_data[table_name] = df
+        # Track parent IDs for this table and write output
+        self._write_output_stream(table_name, transformed_data, table_config)
 
         elapsed = time.time() - start_time
         logging.info(f"Table {table_name}: finished. Time elapsed: {elapsed:.2f} seconds.")
 
     async def _extract_child_table(self, client: DaktelaClient, table_name: str) -> None:
-        table_config = get_table_config(table_name, self.custom_table_configs)
+        """Extract a child table that depends on parent table."""
+        table_config = get_table_config(table_name)
         if not table_config or not table_config.has_requirements():
             return
 
@@ -232,15 +178,15 @@ class Component(ComponentBase):
         )
 
         transformer = DataTransformer(self.server_name, table_config)
-        df = transformer.transform(data)
+        transformed_data = transformer.transform(data)
 
-        self._write_output(table_name, df)
-        self.extracted_data[table_name] = df
+        self._write_output_stream(table_name, transformed_data, table_config)
 
         elapsed = time.time() - start_time
         logging.info(f"Table {table_name}: finished. Time elapsed: {elapsed:.2f} seconds.")
 
-    def _prepare_filters(self, table_config: TableConfig) -> list[dict]:
+    def _prepare_filters(self, table_config: TableConfig) -> list[dict[str, Any]]:
+        """Prepare API filters with date range."""
         filters = []
         date_from = self.config.get_date_from()
         date_to = self.config.get_date_to()
@@ -257,84 +203,143 @@ class Component(ComponentBase):
         return filters
 
     def _get_parent_ids(self, parent_table: str, parent_column: str) -> list[str]:
-        if parent_table in self.extracted_data:
-            df = self.extracted_data[parent_table]
-            normalized_col = parent_column.replace(".", "_")
-            if normalized_col in df.columns:
-                return df[normalized_col].dropna().unique().tolist()
+        """Get parent IDs from extracted data or CSV file."""
+        # First check if we have parent IDs in memory
+        normalized_col = parent_column.replace(".", "_")
+        if parent_table in self.extracted_parent_ids:
+            if normalized_col in self.extracted_parent_ids[parent_table]:
+                return list(self.extracted_parent_ids[parent_table][normalized_col])
 
-        csv_path = self._get_output_path(parent_table)
-        if csv_path.exists():
-            try:
-                parent_df = pd.read_csv(csv_path, header=None)
-                manifest_path = Path(f"{csv_path}.manifest")
-                if manifest_path.exists():
-                    with open(manifest_path) as f:
-                        manifest = json.load(f)
-                        columns = manifest.get("columns", [])
-                        if columns:
-                            parent_df.columns = columns
-                            normalized_col = parent_column.replace(".", "_")
-                            if normalized_col in parent_df.columns:
-                                return parent_df[normalized_col].dropna().unique().tolist()
-            except Exception:
-                logging.warning(f"Error reading parent table {parent_table}")
+        # Otherwise, read from CSV file
+        output_name = f"{self.server_name}_{parent_table}.csv"
+        csv_path = Path(self.tables_out_path) / output_name
+        if not csv_path.exists():
+            return []
 
-        return []
+        try:
+            # Read manifest to get column names
+            manifest_path = Path(f"{csv_path}.manifest")
+            if not manifest_path.exists():
+                return []
 
-    def _track_invalid_activities(self, df: pd.DataFrame, table_config: TableConfig) -> None:
+            with open(manifest_path, 'r', encoding='utf-8') as f:
+                manifest = self._read_json_with_null_handling(f)
+                columns = manifest.get("columns", [])
+                if not columns or normalized_col not in columns:
+                    return []
+
+                col_index = columns.index(normalized_col)
+
+            # Read CSV with null character handling
+            parent_ids = set()
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                lazy_lines = (line.replace('\0', '') for line in f)
+                reader = csv.reader(lazy_lines)
+                for row in reader:
+                    if len(row) > col_index and row[col_index]:
+                        parent_ids.add(row[col_index])
+
+            return list(parent_ids)
+
+        except Exception as e:
+            logging.warning(f"Error reading parent table {parent_table}: {type(e).__name__}")
+            return []
+
+    @staticmethod
+    def _read_json_with_null_handling(file_handle) -> dict:
+        """Read JSON file with null character handling."""
+        import json
+        content = file_handle.read().replace('\0', '')
+        return json.loads(content)
+
+    def _write_output_stream(
+        self,
+        table_name: str,
+        data_generator,
+        table_config: TableConfig
+    ) -> None:
+        """Write transformed data to CSV using ElasticDictWriter."""
+        output_name = f"{self.server_name}_{table_name}.csv"
+        output_path = Path(self.tables_out_path) / output_name
+
+        # Always use "id" as primary key since we generate it
+        primary_key_list = ["id"]
+
+        row_count = 0
+        parent_ids_tracking = {}
+        fieldnames = []
+
+        try:
+            # Collect rows and determine fieldnames dynamically
+            rows = []
+            for row in data_generator:
+                rows.append(row)
+
+                # Track new fieldnames
+                for key in row.keys():
+                    if key not in fieldnames:
+                        fieldnames.append(key)
+
+                # Track parent IDs for later use
+                for key, value in row.items():
+                    if value and value != "":
+                        if key not in parent_ids_tracking:
+                            parent_ids_tracking[key] = set()
+                        parent_ids_tracking[key].add(str(value))
+
+                # Track invalid activities
+                if table_name == "activities":
+                    self._track_invalid_activity_from_row(row, table_config)
+
+            if not rows:
+                logging.warning(f"No data extracted for table {table_name}")
+                return
+
+            # Write using ElasticDictWriter
+            writer = ElasticDictWriter(str(output_path), fieldnames=fieldnames)
+            for row in rows:
+                writer.writerow(row)
+                row_count += 1
+
+            # Store parent IDs for this table
+            self.extracted_parent_ids[table_name] = parent_ids_tracking
+
+            # Create table definition with proper manifest
+            table_def = self.create_out_table_definition(
+                output_name,
+                incremental=self.config.incremental,
+                primary_key=primary_key_list
+            )
+
+            # Write manifest using Keboola component method
+            self.write_manifest(table_def)
+
+            logging.info(f"Written {row_count} rows to {output_name}")
+
+        except Exception as e:
+            logging.error(f"Error writing output for table {table_name}: {type(e).__name__}")
+            raise
+
+    def _track_invalid_activity_from_row(self, row: dict[str, Any], table_config: TableConfig) -> None:
+        """Track invalid activities from a single row."""
         primary_key_col = table_config.primary_keys[0] if table_config.primary_keys else "name"
         normalized_col = primary_key_col.replace(".", "_")
 
-        if normalized_col in df.columns:
-            invalid_mask = df[normalized_col].isna() | (df[normalized_col] == "")
-            invalid_ids = df.loc[invalid_mask, normalized_col].tolist()
-            self.invalid_activities.extend([str(i) for i in invalid_ids if pd.notna(i)])
-
-    def _write_output(self, table_name: str, df: pd.DataFrame) -> None:
-        if df.empty:
-            logging.warning(f"No data extracted for table {table_name}")
-            return
-
-        output_name = f"{self.server_name}_{table_name}.csv"
-        table_def = self.create_out_table_definition(
-            output_name,
-            incremental=self.config.incremental,
-            primary_key=["id"]
-        )
-
-        df.to_csv(table_def.full_path, index=False, header=False)
-
-        manifest = {
-            "columns": df.columns.tolist(),
-            "primary_key": ["id"],
-            "incremental": self.config.incremental
-        }
-
-        manifest_path = f"{table_def.full_path}.manifest"
-        with open(manifest_path, "w") as f:
-            json.dump(manifest, f, indent=2)
-
-        logging.info(f"Written {len(df)} rows to {output_name}")
-
-    def _get_output_path(self, table_name: str) -> Path:
-        output_name = f"{self.server_name}_{table_name}.csv"
-        return Path(self.tables_out_path) / output_name
+        if normalized_col in row:
+            value = row[normalized_col]
+            if value is None or value == "":
+                # Track the ID if it has one
+                if "id" in row and row["id"]:
+                    self.invalid_activities.append(str(row["id"]))
 
 
-"""
-        Main entrypoint
-"""
 if __name__ == "__main__":
     try:
         comp = Component()
-        # this triggers the run method by default and is controlled by the configuration.action parameter
         comp.execute_action()
     except UserException as exc:
-        # Use logging.error instead of logging.exception to avoid exposing sensitive data in tracebacks
-        logging.error(str(exc))
-        exit(1)
+        logging.error(exc)
+        sys.exit(1)
     except Exception as exc:
-        # Log only the exception type and a generic message, not the full traceback
-        logging.error(f"Unexpected error: {type(exc).__name__}")
-        exit(2)
+        logging.exception(exc)
+        sys.exit(2)

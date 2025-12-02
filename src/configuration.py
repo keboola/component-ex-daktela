@@ -1,7 +1,7 @@
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Optional, Union
+from typing import Optional
 
 from keboola.component.exceptions import UserException
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
@@ -14,7 +14,7 @@ class Configuration(BaseModel):
     server: Optional[str] = None
     date_from: str = Field(alias="from")
     date_to: str = Field(alias="to")
-    tables: Union[str, list[str]]
+    tables: list[str]
     incremental: bool = False
     debug: bool = False
 
@@ -68,9 +68,7 @@ class Configuration(BaseModel):
         raise UserException("Could not extract server name from URL")
 
     def get_table_list(self) -> list[str]:
-        if isinstance(self.tables, list):
-            return [t.strip() for t in self.tables if t.strip()]
-        return [t.strip() for t in self.tables.split(",") if t.strip()]
+        return [t.strip() for t in self.tables if t.strip()]
 
     def parse_date(self, date_str: str) -> datetime:
         date_str = date_str.strip()

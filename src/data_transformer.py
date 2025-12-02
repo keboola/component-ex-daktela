@@ -1,106 +1,204 @@
 import hashlib
 import re
-from typing import Any
-
-import pandas as pd
+from typing import Any, Generator
 
 from table_config import TableConfig
 
 
 class DataTransformer:
+    """Transform raw API data into normalized format suitable for CSV output."""
+
     def __init__(self, server_name: str, table_config: TableConfig):
         self.server_name = server_name
         self.table_config = table_config
+        self.html_pattern = re.compile(r"<.*?>")
         self.invalid_activities: list[str] = []
 
-    def transform(self, data: list[dict]) -> pd.DataFrame:
+    def transform(self, data: list[dict]) -> Generator[dict[str, Any], None, None]:
+        """
+        Transform raw API data into normalized rows.
+
+        Yields transformed rows one at a time for memory efficiency.
+        """
         if not data:
-            return pd.DataFrame()
+            return
 
-        df = pd.DataFrame(data)
-        df = self._normalize_nested_json(df)
-        df = self._filter_columns(df)
-        df = self._handle_list_columns(df)
-        df = self._handle_list_of_dicts_columns(df)
-        df = self._clean_html(df)
-        df = self._add_server_column(df)
-        df = self._prefix_key_columns(df)
-        df = self._generate_compound_id(df)
-        df = self._reorder_columns(df)
+        for row in data:
+            # Process the row through all transformation steps
+            normalized_row = self._normalize_nested_json(row)
+            filtered_row = self._filter_columns(normalized_row)
 
-        return df
+            # Handle list columns - may yield multiple rows per input row
+            expanded_rows = self._handle_list_columns(filtered_row)
+            for expanded_row in expanded_rows:
+                # Handle list of dicts - may yield multiple rows
+                further_expanded = self._handle_list_of_dicts_columns(expanded_row)
+                for final_row in further_expanded:
+                    cleaned_row = self._clean_html(final_row)
+                    cleaned_row = self._add_server_column(cleaned_row)
+                    cleaned_row = self._prefix_key_columns(cleaned_row)
+                    cleaned_row = self._generate_compound_id(cleaned_row)
+                    yield cleaned_row
 
-    def _normalize_nested_json(self, df: pd.DataFrame) -> pd.DataFrame:
-        for col in df.columns:
-            if df[col].apply(lambda x: isinstance(x, dict)).any():
-                nested_df = pd.json_normalize(df[col].apply(lambda x: x if isinstance(x, dict) else {}))
-                nested_df.columns = [
-                    f"{col}_{c}" if not c.startswith(col) else c.replace(".", "_")
-                    for c in nested_df.columns
-                ]
-                df = pd.concat([df.drop(columns=[col]), nested_df], axis=1)
+    def _normalize_nested_json(self, row: dict) -> dict:
+        """Flatten nested dictionaries with dot notation into underscore notation."""
+        result = {}
 
-        df.columns = [col.replace(".", "_") for col in df.columns]
-        return df
+        for key, value in row.items():
+            normalized_key = key.replace(".", "_")
 
-    def _filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+            if isinstance(value, dict):
+                # Flatten nested dict
+                for nested_key, nested_value in value.items():
+                    nested_normalized = f"{normalized_key}_{nested_key}".replace(".", "_")
+                    result[nested_normalized] = nested_value
+            else:
+                result[normalized_key] = value
+
+        return result
+
+    def _filter_columns(self, row: dict) -> dict:
+        """Keep only configured columns if specified."""
         if not self.table_config.columns:
-            return df
+            return row
 
-        normalized_columns = [col.replace(".", "_") for col in self.table_config.columns]
-        existing_columns = [col for col in normalized_columns if col in df.columns]
+        normalized_columns = {col.replace(".", "_") for col in self.table_config.columns}
+        return {k: v for k, v in row.items() if k in normalized_columns}
 
-        if not existing_columns:
-            return df
+    def _handle_list_columns(self, row: dict) -> Generator[dict, None, None]:
+        """Explode list columns - one row becomes multiple rows."""
+        list_cols_to_explode = [
+            col.replace(".", "_") for col in self.table_config.list_columns
+        ]
 
-        return df[existing_columns]
+        # Find which columns in this row need exploding
+        cols_to_explode = [col for col in list_cols_to_explode if col in row]
 
-    def _handle_list_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        for col in self.table_config.list_columns:
-            normalized_col = col.replace(".", "_")
-            if normalized_col in df.columns:
-                df = df.explode(normalized_col)
+        if not cols_to_explode:
+            yield row
+            return
 
-        return df
+        # Get the first list column to explode
+        explode_col = cols_to_explode[0]
+        list_values = row.get(explode_col, [])
 
-    def _handle_list_of_dicts_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        for col in self.table_config.list_of_dicts_columns:
-            normalized_col = col.replace(".", "_")
-            if normalized_col in df.columns:
-                expanded_rows = []
-                for idx, row in df.iterrows():
-                    value = row[normalized_col]
-                    if isinstance(value, list) and value:
-                        for item in value:
-                            new_row = row.copy()
-                            if isinstance(item, dict):
-                                for k, v in item.items():
-                                    new_row[f"{normalized_col}_{k}"] = v
-                            expanded_rows.append(new_row)
-                    else:
-                        expanded_rows.append(row)
+        if not isinstance(list_values, list) or not list_values:
+            yield row
+            return
 
-                if expanded_rows:
-                    df = pd.DataFrame(expanded_rows)
-                    if normalized_col in df.columns:
-                        df = df.drop(columns=[normalized_col])
+        # Create a row for each value in the list
+        for value in list_values:
+            new_row = row.copy()
+            new_row[explode_col] = value
 
-        return df
+            # Recursively handle remaining list columns
+            if len(cols_to_explode) > 1:
+                # Temporarily modify config to handle remaining columns
+                remaining = [c for c in cols_to_explode if c != explode_col]
+                for sub_row in self._handle_list_columns_recursive(new_row, remaining):
+                    yield sub_row
+            else:
+                yield new_row
 
-    def _clean_html(self, df: pd.DataFrame) -> pd.DataFrame:
-        html_pattern = re.compile(r"<.*?>")
+    def _handle_list_columns_recursive(self, row: dict, remaining_cols: list[str]) -> Generator[dict, None, None]:
+        """Helper to recursively explode multiple list columns."""
+        if not remaining_cols:
+            yield row
+            return
 
-        for col in df.columns:
-            if df[col].dtype == object:
-                df[col] = df[col].apply(lambda x: self._clean_html_value(x, html_pattern))
+        explode_col = remaining_cols[0]
+        list_values = row.get(explode_col, [])
 
-        return df
+        if not isinstance(list_values, list) or not list_values:
+            yield row
+            return
 
-    def _clean_html_value(self, value: Any, pattern: re.Pattern) -> Any:
+        for value in list_values:
+            new_row = row.copy()
+            new_row[explode_col] = value
+
+            if len(remaining_cols) > 1:
+                yield from self._handle_list_columns_recursive(new_row, remaining_cols[1:])
+            else:
+                yield new_row
+
+    def _handle_list_of_dicts_columns(self, row: dict) -> Generator[dict, None, None]:
+        """Expand list-of-dicts columns into multiple rows with flattened keys."""
+        list_of_dicts_cols = [
+            col.replace(".", "_") for col in self.table_config.list_of_dicts_columns
+        ]
+
+        cols_to_expand = [col for col in list_of_dicts_cols if col in row]
+
+        if not cols_to_expand:
+            yield row
+            return
+
+        # Get first column to expand
+        expand_col = cols_to_expand[0]
+        list_values = row.get(expand_col, [])
+
+        if not isinstance(list_values, list) or not list_values:
+            # Remove the column and yield the row
+            new_row = {k: v for k, v in row.items() if k != expand_col}
+            yield new_row
+            return
+
+        # Create a row for each dict in the list
+        for item in list_values:
+            new_row = {k: v for k, v in row.items() if k != expand_col}
+
+            if isinstance(item, dict):
+                # Flatten the dict into the row with prefixed keys
+                for k, v in item.items():
+                    new_row[f"{expand_col}_{k}"] = v
+
+            # Recursively handle remaining columns
+            if len(cols_to_expand) > 1:
+                remaining = [c for c in cols_to_expand if c != expand_col]
+                yield from self._handle_list_of_dicts_columns_recursive(new_row, remaining)
+            else:
+                yield new_row
+
+    def _handle_list_of_dicts_columns_recursive(self, row: dict, remaining_cols: list[str]) -> Generator[dict, None, None]:
+        """Helper to recursively expand multiple list-of-dicts columns."""
+        if not remaining_cols:
+            yield row
+            return
+
+        expand_col = remaining_cols[0]
+        list_values = row.get(expand_col, [])
+
+        if not isinstance(list_values, list) or not list_values:
+            new_row = {k: v for k, v in row.items() if k != expand_col}
+            yield new_row
+            return
+
+        for item in list_values:
+            new_row = {k: v for k, v in row.items() if k != expand_col}
+
+            if isinstance(item, dict):
+                for k, v in item.items():
+                    new_row[f"{expand_col}_{k}"] = v
+
+            if len(remaining_cols) > 1:
+                yield from self._handle_list_of_dicts_columns_recursive(new_row, remaining_cols[1:])
+            else:
+                yield new_row
+
+    def _clean_html(self, row: dict) -> dict:
+        """Remove HTML tags from string values."""
+        cleaned = {}
+        for key, value in row.items():
+            cleaned[key] = self._clean_html_value(value)
+        return cleaned
+
+    def _clean_html_value(self, value: Any) -> Any:
+        """Remove HTML tags from a single value."""
         if not isinstance(value, str):
             return value
 
-        cleaned = pattern.sub("", value)
+        cleaned = self.html_pattern.sub("", value)
         cleaned = cleaned.strip()
 
         if not cleaned:
@@ -108,52 +206,63 @@ class DataTransformer:
 
         return cleaned
 
-    def _add_server_column(self, df: pd.DataFrame) -> pd.DataFrame:
-        df.insert(0, "server", self.server_name)
-        return df
+    def _add_server_column(self, row: dict) -> dict:
+        """Add server name as first column."""
+        return {"server": self.server_name, **row}
 
-    def _prefix_key_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _prefix_key_columns(self, row: dict) -> dict:
+        """Prefix key columns with server name."""
         all_key_columns = (
             self.table_config.primary_keys
             + self.table_config.secondary_keys
             + self.table_config.keys
         )
 
-        for col in all_key_columns:
-            normalized_col = col.replace(".", "_")
-            if normalized_col in df.columns and normalized_col not in self.table_config.no_prefix_columns:
-                df[normalized_col] = df[normalized_col].apply(
-                    lambda x: f"{self.server_name}_{x}" if pd.notna(x) and x != "" else x
-                )
+        result = {}
+        for key, value in row.items():
+            # Check if this column should be prefixed
+            should_prefix = False
+            for key_col in all_key_columns:
+                if key_col.replace(".", "_") == key:
+                    if key not in self.table_config.no_prefix_columns:
+                        should_prefix = True
+                    break
 
-        return df
+            if should_prefix and value is not None and value != "":
+                result[key] = f"{self.server_name}_{value}"
+            else:
+                result[key] = value
 
-    def _generate_compound_id(self, df: pd.DataFrame) -> pd.DataFrame:
+        return result
+
+    def _generate_compound_id(self, row: dict) -> dict:
+        """Generate compound MD5 ID from primary and secondary keys."""
         primary_cols = [col.replace(".", "_") for col in self.table_config.primary_keys]
         secondary_cols = [col.replace(".", "_") for col in self.table_config.secondary_keys]
 
         all_key_cols = primary_cols + secondary_cols
-        existing_key_cols = [col for col in all_key_cols if col in df.columns]
+        existing_key_cols = [col for col in all_key_cols if col in row]
 
         if not existing_key_cols:
-            df.insert(1, "id", "")
-            return df
+            return {"id": "", **row}
 
-        def generate_id(row):
-            values = [str(row[col]) if pd.notna(row[col]) else "" for col in existing_key_cols]
-            combined = "".join(values)
-            return hashlib.md5(combined.encode()).hexdigest()
+        # Generate MD5 hash from key column values
+        values = [str(row[col]) if row[col] is not None else "" for col in existing_key_cols]
+        combined = "".join(values)
+        id_hash = hashlib.md5(combined.encode()).hexdigest()
 
-        df.insert(1, "id", df.apply(generate_id, axis=1))
-        return df
+        # Insert id after server column
+        result = {}
+        result["server"] = row.get("server", "")
+        result["id"] = id_hash
+        result.update({k: v for k, v in row.items() if k not in ["server", "id"]})
 
-    def _reorder_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        priority_cols = ["server", "id"]
-        other_cols = [col for col in df.columns if col not in priority_cols]
-        return df[priority_cols + other_cols]
+        return result
 
     def track_invalid_activity(self, activity_id: str) -> None:
+        """Track invalid activity IDs to filter out later."""
         self.invalid_activities.append(activity_id)
 
     def filter_invalid_activities(self, parent_ids: list[str]) -> list[str]:
+        """Filter out invalid activity IDs from parent ID list."""
         return [pid for pid in parent_ids if pid not in self.invalid_activities]

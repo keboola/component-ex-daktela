@@ -21,7 +21,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "-7",
             "to": "today",
-            "tables": "contacts,tickets",
+            "tables": ["contacts", "tickets"],
             "incremental": True
         }
         config = Configuration(**params)
@@ -37,7 +37,7 @@ class TestConfiguration(unittest.TestCase):
             "url": "https://mycompany.daktela.com",
             "from": "-7",
             "to": "today",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         self.assertEqual(config.get_base_url(), "https://mycompany.daktela.com")
@@ -49,7 +49,7 @@ class TestConfiguration(unittest.TestCase):
             "url": "https://invalid-url.com",
             "from": "-7",
             "to": "today",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         with self.assertRaises(UserException):
             Configuration(**params)
@@ -60,7 +60,7 @@ class TestConfiguration(unittest.TestCase):
             "#password": "test_pass",
             "from": "-7",
             "to": "today",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         with self.assertRaises(UserException):
             Configuration(**params)
@@ -72,7 +72,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "-7",
             "to": "today",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         self.assertEqual(config.get_server_name(), "mycompany")
@@ -84,7 +84,7 @@ class TestConfiguration(unittest.TestCase):
             "url": "https://mycompany.daktela.com",
             "from": "-7",
             "to": "today",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         self.assertEqual(config.get_server_name(), "mycompany")
@@ -96,7 +96,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "-7",
             "to": "today",
-            "tables": "contacts, tickets, users"
+            "tables": ["contacts", "tickets", "users"]
         }
         config = Configuration(**params)
         self.assertEqual(config.get_table_list(), ["contacts", "tickets", "users"])
@@ -109,7 +109,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "-7",
             "to": "today",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         result = config.parse_date("today")
@@ -124,7 +124,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "-7",
             "to": "0",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         result = config.parse_date("0")
@@ -139,7 +139,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "-7",
             "to": "today",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         result = config.parse_date("-7")
@@ -153,7 +153,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "2024-01-01",
             "to": "2024-01-15",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         result = config.parse_date("2024-01-01")
@@ -167,7 +167,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "invalid-date",
             "to": "today",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         with self.assertRaises(UserException):
@@ -181,7 +181,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "-7",
             "to": "today",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         config.validate_date_range()
@@ -194,7 +194,7 @@ class TestConfiguration(unittest.TestCase):
             "server": "mycompany",
             "from": "today",
             "to": "-7",
-            "tables": "contacts"
+            "tables": ["contacts"]
         }
         config = Configuration(**params)
         with self.assertRaises(UserException):

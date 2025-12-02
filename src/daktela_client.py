@@ -169,7 +169,9 @@ class DaktelaClient:
         data = await self._request_with_retry(url, params)
         return data.get("result", {}).get("total", 0)
 
-    def _build_filter_params(self, filters: list[dict]) -> str:
+    @staticmethod
+    def _build_filter_params(filters: list[dict]) -> str:
+        """Build API filter parameters string from filter list."""
         filter_parts = []
         for f in filters:
             field = f.get("field", "")

@@ -51,18 +51,11 @@
       "title": "Tables",
       "description": "Select tables to extract from Daktela.",
       "propertyOrder": 7,
-      "items": {
-        "type": "string"
-      },
-      "format": "select",
+      "minItems": 1,
       "uniqueItems": true,
-      "options": {
-        "async": {
-          "label": "Load Tables",
-          "action": "loadTables",
-          "autoload": true,
-          "cache": true
-        }
+      "items": {
+        "type": "string",
+        "enum": ["activities", "contacts", "tickets", "users", "queues", "campaigns"]
       }
     },
     "incremental": {
