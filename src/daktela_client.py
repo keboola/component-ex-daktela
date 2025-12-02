@@ -47,9 +47,19 @@ class DaktelaClient:
                         f"Reason: {response.reason}. Make sure your credentials are correct."
                     )
                 data = await response.json()
-                token = data.get("result")
-                if not token:
+                result = data.get("result")
+                if not result:
                     raise UserException("Token received was invalid or empty!")
+
+                # Handle both dict response (v6 API) and string response (legacy)
+                if isinstance(result, dict):
+                    token = result.get("accessToken")
+                else:
+                    token = result
+
+                if not token or not isinstance(token, str):
+                    raise UserException("Token received was invalid or empty!")
+
                 self.access_token = token
                 logging.info("Successfully authenticated with Daktela API")
         except aiohttp.ClientConnectorError:
