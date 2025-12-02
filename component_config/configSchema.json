@@ -47,10 +47,23 @@
       "propertyOrder": 6
     },
     "tables": {
-      "type": "string",
+      "type": "array",
       "title": "Tables",
-      "description": "Comma-separated list of tables to extract (e.g., 'activities,contacts,tickets,users,queues,campaigns').",
-      "propertyOrder": 7
+      "description": "Select tables to extract from Daktela.",
+      "propertyOrder": 7,
+      "items": {
+        "type": "string"
+      },
+      "format": "select",
+      "uniqueItems": true,
+      "options": {
+        "async": {
+          "label": "Load Tables",
+          "action": "loadTables",
+          "autoload": true,
+          "cache": true
+        }
+      }
     },
     "incremental": {
       "type": "boolean",

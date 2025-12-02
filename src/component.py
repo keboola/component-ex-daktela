@@ -19,7 +19,25 @@ from keboola.component.exceptions import UserException
 from configuration import Configuration
 from daktela_client import DaktelaClient
 from data_transformer import DataTransformer
-from table_config import TableConfig, get_table_config
+from table_config import DEFAULT_TABLE_CONFIGS, TableConfig, get_table_config
+
+# Table descriptions for the UI
+TABLE_DESCRIPTIONS = {
+    "activities": "User activities and interactions",
+    "activities_statuses": "Activity status history",
+    "activities_call": "Call-specific activity data",
+    "activities_email": "Email-specific activity data",
+    "activities_chat": "Chat-specific activity data",
+    "contacts": "CRM contacts",
+    "tickets": "Support tickets",
+    "users": "Daktela users/agents",
+    "queues": "Call queues",
+    "campaigns": "Outbound campaigns",
+    "accounts": "Customer accounts",
+    "statuses": "Status definitions",
+    "categories": "Category definitions",
+    "records": "Call recordings metadata",
+}
 
 
 class Component(ComponentBase):
@@ -53,6 +71,21 @@ class Component(ComponentBase):
 
         elapsed = time.time() - start_time
         logging.info(f"Elapsed time of extraction: {elapsed:.2f} seconds.")
+
+    def load_tables(self):
+        """
+        Sync action to load available tables for the UI multi-select.
+
+        Returns a list of available tables with their descriptions.
+        """
+        tables = []
+        for table_name in sorted(DEFAULT_TABLE_CONFIGS.keys()):
+            description = TABLE_DESCRIPTIONS.get(table_name, table_name)
+            tables.append({
+                "value": table_name,
+                "label": f"{table_name} - {description}"
+            })
+        return {"status": "success", "data": tables}
 
     def _init_configuration(self) -> None:
         self.config = Configuration(**self.configuration.parameters)
@@ -244,8 +277,8 @@ class Component(ComponentBase):
                             normalized_col = parent_column.replace(".", "_")
                             if normalized_col in parent_df.columns:
                                 return parent_df[normalized_col].dropna().unique().tolist()
-            except Exception as e:
-                logging.warning(f"Error reading parent table {parent_table}: {e}")
+            except Exception:
+                logging.warning(f"Error reading parent table {parent_table}")
 
         return []
 
@@ -298,8 +331,10 @@ if __name__ == "__main__":
         # this triggers the run method by default and is controlled by the configuration.action parameter
         comp.execute_action()
     except UserException as exc:
-        logging.exception(exc)
+        # Use logging.error instead of logging.exception to avoid exposing sensitive data in tracebacks
+        logging.error(str(exc))
         exit(1)
     except Exception as exc:
-        logging.exception(exc)
+        # Log only the exception type and a generic message, not the full traceback
+        logging.error(f"Unexpected error: {type(exc).__name__}")
         exit(2)
