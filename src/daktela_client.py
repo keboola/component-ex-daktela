@@ -175,18 +175,19 @@ class DaktelaClient:
         filters: Optional[list] = None,
         fields: Optional[list] = None,
         limit: int = DEFAULT_LIMIT
-    ) -> list[dict]:
+    ):
+        """Extract table data using async generator to avoid memory issues with large datasets."""
         total = await self.get_table_count(table_name, filters)
         batches = (total + limit - 1) // limit if total > 0 else 1
 
         logging.info(f"Table {table_name}: started. A total of {total} entries ({batches} batches).")
 
-        all_data = []
         for i in range(0, max(total, 1), limit):
-            batch_data = await self.get_table_data(table_name, skip=i, limit=limit, filters=filters, fields=fields)
-            all_data.extend(batch_data)
-
-        return all_data
+            batch_data = await self.get_table_data(
+                table_name, skip=i, limit=limit, filters=filters, fields=fields
+            )
+            for row in batch_data:
+                yield row
 
     async def extract_child_table(
         self,
@@ -194,21 +195,14 @@ class DaktelaClient:
         parent_ids: list[str],
         child_table: str,
         limit: int = DEFAULT_LIMIT
-    ) -> list[dict]:
-        all_data = []
+    ):
+        """Extract child table data using async generator to avoid memory issues."""
         total_entries = 0
 
+        # First pass: count total entries
         for parent_id in parent_ids:
             count = await self.get_child_table_count(parent_table, parent_id, child_table)
             total_entries += count
-
-            for i in range(0, max(count, 1), limit):
-                batch_data = await self.get_child_table_data(
-                    parent_table, parent_id, child_table, skip=i, limit=limit
-                )
-                for item in batch_data:
-                    item[f"{parent_table}_name"] = parent_id
-                all_data.extend(batch_data)
 
         batches = (total_entries + limit - 1) // limit if total_entries > 0 else 1
         logging.info(
@@ -216,4 +210,14 @@ class DaktelaClient:
             f"A total of {total_entries} entries ({batches} batches)."
         )
 
-        return all_data
+        # Second pass: yield data
+        for parent_id in parent_ids:
+            count = await self.get_child_table_count(parent_table, parent_id, child_table)
+
+            for i in range(0, max(count, 1), limit):
+                batch_data = await self.get_child_table_data(
+                    parent_table, parent_id, child_table, skip=i, limit=limit
+                )
+                for item in batch_data:
+                    item[f"{parent_table}_name"] = parent_id
+                    yield item
