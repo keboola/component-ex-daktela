@@ -70,7 +70,8 @@ class Configuration(BaseModel):
     def get_table_list(self) -> list[str]:
         return [t.strip() for t in self.tables if t.strip()]
 
-    def parse_date(self, date_str: str) -> datetime:
+    @staticmethod
+    def parse_date(date_str: str) -> datetime:
         date_str = date_str.strip()
         if date_str.lower() == "today" or date_str == "0":
             return datetime.now() - timedelta(minutes=30)

@@ -1,10 +1,8 @@
-import asyncio
 import logging
-import ssl
-from typing import Optional
+from typing import Any, Optional
 
-import aiohttp
 from keboola.component.exceptions import UserException
+from keboola.http_client import AsyncHttpClient
 
 
 class DaktelaClient:
@@ -16,108 +14,98 @@ class DaktelaClient:
         self.username = username
         self.password = password
         self.access_token: Optional[str] = None
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._client: Optional[AsyncHttpClient] = None
 
     async def __aenter__(self):
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
-        self._session = aiohttp.ClientSession(connector=connector)
+        # Initialize AsyncHttpClient with retry configuration
+        self._client = AsyncHttpClient(
+            base_url=self.base_url,
+            retries=self.MAX_RETRIES,
+            backoff_factor=1,
+            retry_status_codes=[429, 500, 502, 503, 504]
+        )
         await self.authenticate()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._session:
-            await self._session.close()
+        # AsyncHttpClient cleanup
+        if self._client:
+            await self._client.close()
+        return False
 
     async def authenticate(self) -> None:
-        login_url = f"{self.base_url}/api/v6/login.json"
-        params = {
+        """Authenticate with Daktela API and configure client with access token."""
+        login_url = "/api/v6/login.json"
+        params: dict[str, str] = {
             "username": self.username,
             "password": self.password,
             "only_token": "1"
         }
 
         try:
-            async with self._session.post(login_url, params=params) as response:
-                if response.status != 200:
-                    raise UserException(
-                        f"Invalid response from Daktela server. Status code: {response.status}. "
-                        f"Reason: {response.reason}. Make sure your credentials are correct."
-                    )
-                data = await response.json()
-                result = data.get("result")
-                if not result:
-                    raise UserException("Token received was invalid or empty!")
+            response = await self._client.post_raw(login_url, params=params)
 
-                # Handle both dict response (v6 API) and string response (legacy)
-                if isinstance(result, dict):
-                    token = result.get("accessToken")
-                else:
-                    token = result
+            if response.status_code != 200:
+                raise UserException(
+                    f"Invalid response from Daktela server. Status code: {response.status_code}. "
+                    f"Make sure your credentials are correct."
+                )
 
-                if not token or not isinstance(token, str):
-                    raise UserException("Token received was invalid or empty!")
+            data = response.json()
+            result = data.get("result")
+            if not result:
+                raise UserException("Token received was invalid or empty!")
 
-                self.access_token = token
-                logging.info("Successfully authenticated with Daktela API")
-        except aiohttp.ClientConnectorError:
-            raise UserException("Server not responding, check your url.")
-        except aiohttp.ClientError:
+            # Handle both dict response (v6 API) and string response (legacy)
+            if isinstance(result, dict):
+                token = result.get("accessToken")
+            else:
+                token = result
+
+            if not token or not isinstance(token, str):
+                raise UserException("Token received was invalid or empty!")
+
+            self.access_token = token
+
+            # Reinitialize client with access token in default params
+            await self._client.close()
+            self._client = AsyncHttpClient(
+                base_url=self.base_url,
+                retries=self.MAX_RETRIES,
+                backoff_factor=1,
+                retry_status_codes=[429, 500, 502, 503, 504],
+                default_params={"accessToken": self.access_token}
+            )
+
+            logging.info("Successfully authenticated with Daktela API")
+        except UserException:
+            raise
+        except Exception as e:
             # Don't include exception message as it might contain sensitive data
+            error_type = type(e).__name__
+            if "Connection" in error_type or "Timeout" in error_type:
+                raise UserException("Server not responding, check your url.")
             raise UserException("Connection error while authenticating with Daktela API.")
 
     async def _request_with_retry(
         self,
         url: str,
-        params: Optional[dict] = None
+        params: Optional[dict[str, Any]] = None
     ) -> dict:
-        if params is None:
-            params = {}
-        params["accessToken"] = self.access_token
+        """Make GET request with automatic retry logic.
 
-        last_error_type = None
-        last_status = None
-
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                async with self._session.get(url, params=params) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    last_status = response.status
-                    last_error_type = "http_status"
-            except (aiohttp.ServerDisconnectedError, asyncio.TimeoutError):
-                last_error_type = "network_timeout_or_disconnect"
-            except Exception:
-                # Catch any unexpected errors WITHOUT using their message to avoid leaking sensitive data
-                last_error_type = "unexpected_client_error"
-
-            wait_time = attempt + 1
-            # Log only safe information, never include exception messages that might contain tokens
-            logging.warning(
-                f"Request failed (attempt {attempt + 1}/{self.MAX_RETRIES}), "
-                f"type={last_error_type}, status={last_status}. Retrying in {wait_time}s..."
-            )
-            await asyncio.sleep(wait_time)
-
-        # Construct error messages that we fully control - never include third-party exception messages
-        if last_error_type == "http_status":
-            raise UserException(
-                f"Request failed after {self.MAX_RETRIES} retries with HTTP status {last_status}."
-            )
-        elif last_error_type == "network_timeout_or_disconnect":
-            raise UserException(
-                f"Request failed after {self.MAX_RETRIES} retries due to network timeouts/disconnects."
-            )
-        else:
-            raise UserException(
-                f"Request failed after {self.MAX_RETRIES} retries due to an unexpected client error."
-            )
+        The accessToken is automatically added via default_params in AsyncHttpClient.
+        """
+        try:
+            data = await self._client.get(url, params=params)
+            return data
+        except Exception as e:
+            # AsyncHttpClient already handles retries and error handling
+            raise UserException(f"Request to {url} failed: {type(e).__name__}")
 
     async def get_table_count(self, table_name: str, filters: Optional[list] = None) -> int:
-        url = f"{self.base_url}/api/v6/{table_name}.json"
-        params = {"skip": 0, "take": 1}
+        url = f"/api/v6/{table_name}.json"
+        params: dict[str, Any] = {"skip": 0, "take": 1}
         if filters:
             params["filter"] = self._build_filter_params(filters)
 
@@ -132,8 +120,8 @@ class DaktelaClient:
         filters: Optional[list] = None,
         fields: Optional[list] = None
     ) -> list[dict]:
-        url = f"{self.base_url}/api/v6/{table_name}.json"
-        params = {"skip": skip, "take": limit}
+        url = f"/api/v6/{table_name}.json"
+        params: dict[str, Any] = {"skip": skip, "take": limit}
 
         if filters:
             params["filter"] = self._build_filter_params(filters)
@@ -151,8 +139,8 @@ class DaktelaClient:
         skip: int = 0,
         limit: int = DEFAULT_LIMIT
     ) -> list[dict]:
-        url = f"{self.base_url}/api/v6/{parent_table}/{parent_id}/{child_table}.json"
-        params = {"skip": skip, "take": limit}
+        url = f"/api/v6/{parent_table}/{parent_id}/{child_table}.json"
+        params: dict[str, Any] = {"skip": skip, "take": limit}
 
         data = await self._request_with_retry(url, params)
         return data.get("result", {}).get("data", [])
@@ -163,8 +151,8 @@ class DaktelaClient:
         parent_id: str,
         child_table: str
     ) -> int:
-        url = f"{self.base_url}/api/v6/{parent_table}/{parent_id}/{child_table}.json"
-        params = {"skip": 0, "take": 1}
+        url = f"/api/v6/{parent_table}/{parent_id}/{child_table}.json"
+        params: dict[str, Any] = {"skip": 0, "take": 1}
 
         data = await self._request_with_retry(url, params)
         return data.get("result", {}).get("total", 0)
