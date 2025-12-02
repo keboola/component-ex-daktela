@@ -49,10 +49,11 @@
     "tables": {
       "type": "array",
       "title": "Tables",
-      "description": "Select tables to extract from Daktela.",
+      "description": "Select tables to extract from Daktela. Choose from predefined tables or enter custom table names.",
       "propertyOrder": 7,
       "minItems": 1,
       "uniqueItems": true,
+      "format": "select",
       "items": {
         "type": "string",
         "enum": [
@@ -93,6 +94,10 @@
           "users",
           "users_queues"
         ]
+      },
+      "options": {
+        "tags": true,
+        "freeInput": true
       }
     },
     "incremental": {
