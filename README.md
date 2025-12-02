@@ -8,24 +8,51 @@ This component extracts data from Daktela CRM/Contact Center system and loads it
 
 ## Supported Tables
 
-The extractor supports the following Daktela entities:
+The extractor supports 36 Daktela API v6 entities:
 
+### Core Tables
 | Table | Description |
 |-------|-------------|
+| `accounts` | CRM customer accounts |
 | `activities` | User activities and interactions |
-| `activities_statuses` | Activity status history |
-| `activities_call` | Call-specific activity data (requires activities) |
-| `activities_email` | Email-specific activity data (requires activities) |
-| `activities_chat` | Chat-specific activity data (requires activities) |
+| `calls` | Call records |
+| `campaigns` | Outbound campaigns |
+| `categories` | Category definitions |
+| `chats` | Chat conversations |
 | `contacts` | CRM contacts |
+| `devices` | SIP/WebRTC devices |
+| `emails` | Email messages |
+| `fields` | Custom field definitions |
+| `files` | File attachments |
+| `forms` | Web forms |
+| `groups` | User groups |
+| `holidays` | Holiday calendar |
+| `notes` | Notes and comments |
+| `pauses` | Pause reason definitions |
+| `profiles` | User profiles |
+| `queues` | Call/ticket queues |
+| `recordings` | Call recording metadata |
+| `records` | Custom records |
+| `schedules` | Work schedules |
+| `skills` | User skills |
+| `sms` | SMS messages |
+| `statuses` | Status definitions |
+| `templates` | Message templates |
 | `tickets` | Support tickets |
 | `users` | Daktela users/agents |
-| `queues` | Call queues |
-| `campaigns` | Outbound campaigns |
-| `accounts` | Customer accounts |
-| `statuses` | Status definitions |
-| `categories` | Category definitions |
-| `records` | Call recordings metadata |
+
+### Specialized Tables
+| Table | Description |
+|-------|-------------|
+| `accounts_custom_fields` | Custom fields for accounts |
+| `activities_call` | Call-specific activity data (requires activities) |
+| `activities_chat` | Chat-specific activity data (requires activities) |
+| `activities_email` | Email-specific activity data (requires activities) |
+| `activities_sms` | SMS-specific activity data (requires activities) |
+| `activities_statuses` | Activity status history |
+| `contacts_custom_fields` | Custom fields for contacts |
+| `tickets_categories` | Ticket categories |
+| `users_queues` | User-queue assignments |
 
 ## Configuration
 
@@ -69,6 +96,7 @@ The `from` and `to` parameters support the following formats:
 
 ## Features
 
+- **Memory-Efficient Streaming**: Handles millions of records without memory issues using async generators
 - **Incremental and Full Load**: Choose between appending new data or replacing existing data
 - **Flexible Date Filtering**: Use relative dates (e.g., `-7` for last 7 days) or explicit dates
 - **Automatic Pagination**: Handles large datasets with configurable batch sizes
@@ -76,6 +104,7 @@ The `from` and `to` parameters support the following formats:
 - **Parent-Child Relationships**: Automatically handles dependent tables (e.g., activities → activities_email)
 - **Data Integrity**: MD5-based compound ID generation for consistent primary keys
 - **Multi-Instance Support**: Server prefix on key columns for data from multiple Daktela instances
+- **Large Dataset Support**: Tested with 3.5M+ records, constant memory usage regardless of dataset size
 
 ## Output
 

@@ -1,25 +1,48 @@
 ## Daktela Extractor
 
-Extracts data from Daktela CRM/Contact Center system via API v6.
+Extracts data from Daktela CRM/Contact Center system via API v6. Supports **36 tables** covering all major Daktela entities.
 
 ### Supported Tables
 
-The extractor supports the following Daktela entities:
-
+#### Core Tables (27)
+- **accounts** - CRM customer accounts
 - **activities** - User activities and interactions
-- **activities_statuses** - Activity status history
-- **activities_call** - Call-specific activity data
-- **activities_email** - Email-specific activity data
-- **activities_chat** - Chat-specific activity data
+- **calls** - Call records with duration, disposition, recordings
+- **campaigns** - Outbound campaigns
+- **categories** - Category definitions
+- **chats** - Chat conversations
 - **contacts** - CRM contacts
+- **devices** - SIP/WebRTC devices
+- **emails** - Email messages with full headers
+- **fields** - Custom field definitions
+- **files** - File attachments
+- **forms** - Web forms
+- **groups** - User groups
+- **holidays** - Holiday calendar
+- **notes** - Notes and comments
+- **pauses** - Pause reason definitions
+- **profiles** - User profiles and permissions
+- **queues** - Call/ticket queues
+- **recordings** - Call recording metadata
+- **records** - Custom records
+- **schedules** - Work schedules
+- **skills** - User skills
+- **sms** - SMS messages
+- **statuses** - Status definitions
+- **templates** - Message templates
 - **tickets** - Support tickets
 - **users** - Daktela users/agents
-- **queues** - Call queues
-- **campaigns** - Outbound campaigns
-- **accounts** - Customer accounts
-- **statuses** - Status definitions
-- **categories** - Category definitions
-- **records** - Call recordings metadata
+
+#### Specialized Tables (9)
+- **accounts_custom_fields** - Custom fields for accounts
+- **activities_call** - Call-specific activity details (requires activities table)
+- **activities_chat** - Chat-specific activity details (requires activities table)
+- **activities_email** - Email-specific activity details (requires activities table)
+- **activities_sms** - SMS-specific activity details (requires activities table)
+- **activities_statuses** - Activity status history
+- **contacts_custom_fields** - Custom fields for contacts
+- **tickets_categories** - Hierarchical ticket categories
+- **users_queues** - User-queue priority assignments
 
 ### Features
 
