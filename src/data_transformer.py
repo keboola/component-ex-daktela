@@ -160,7 +160,9 @@ class DataTransformer:
             else:
                 yield new_row
 
-    def _handle_list_of_dicts_columns_recursive(self, row: dict, remaining_cols: list[str]) -> Generator[dict, None, None]:
+    def _handle_list_of_dicts_columns_recursive(
+        self, row: dict, remaining_cols: list[str]
+    ) -> Generator[dict, None, None]:
         """Helper to recursively expand multiple list-of-dicts columns."""
         if not remaining_cols:
             yield row

@@ -21,6 +21,7 @@ from daktela_client import DaktelaClient
 from data_transformer import DataTransformer
 from table_config import TableConfig, get_table_config
 
+
 class Component(ComponentBase):
     """
     Daktela Extractor Component.
