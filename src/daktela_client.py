@@ -64,8 +64,9 @@ class DaktelaClient:
                 logging.info("Successfully authenticated with Daktela API")
         except aiohttp.ClientConnectorError:
             raise UserException("Server not responding, check your url.")
-        except aiohttp.ClientError as e:
-            raise UserException(f"Connection error: {str(e)}")
+        except aiohttp.ClientError:
+            # Don't include exception message as it might contain sensitive data
+            raise UserException("Connection error while authenticating with Daktela API.")
 
     async def _request_with_retry(
         self,
@@ -76,24 +77,43 @@ class DaktelaClient:
             params = {}
         params["accessToken"] = self.access_token
 
-        last_error = None
+        last_error_type = None
+        last_status = None
+
         for attempt in range(self.MAX_RETRIES):
             try:
                 async with self._session.get(url, params=params) as response:
                     if response.status == 200:
                         return await response.json()
-                    last_error = f"Status {response.status}: {response.reason}"
-            except (aiohttp.ServerDisconnectedError, asyncio.TimeoutError) as e:
-                last_error = str(e)
+                    last_status = response.status
+                    last_error_type = "http_status"
+            except (aiohttp.ServerDisconnectedError, asyncio.TimeoutError):
+                last_error_type = "network_timeout_or_disconnect"
+            except Exception:
+                # Catch any unexpected errors WITHOUT using their message to avoid leaking sensitive data
+                last_error_type = "unexpected_client_error"
 
             wait_time = attempt + 1
+            # Log only safe information, never include exception messages that might contain tokens
             logging.warning(
-                f"Request failed (attempt {attempt + 1}/{self.MAX_RETRIES}): {last_error}. "
-                f"Retrying in {wait_time}s..."
+                f"Request failed (attempt {attempt + 1}/{self.MAX_RETRIES}), "
+                f"type={last_error_type}, status={last_status}. Retrying in {wait_time}s..."
             )
             await asyncio.sleep(wait_time)
 
-        raise UserException(f"Request failed after {self.MAX_RETRIES} retries: {last_error}")
+        # Construct error messages that we fully control - never include third-party exception messages
+        if last_error_type == "http_status":
+            raise UserException(
+                f"Request failed after {self.MAX_RETRIES} retries with HTTP status {last_status}."
+            )
+        elif last_error_type == "network_timeout_or_disconnect":
+            raise UserException(
+                f"Request failed after {self.MAX_RETRIES} retries due to network timeouts/disconnects."
+            )
+        else:
+            raise UserException(
+                f"Request failed after {self.MAX_RETRIES} retries due to an unexpected client error."
+            )
 
     async def get_table_count(self, table_name: str, filters: Optional[list] = None) -> int:
         url = f"{self.base_url}/api/v6/{table_name}.json"

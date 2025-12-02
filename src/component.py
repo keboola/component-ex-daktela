@@ -277,8 +277,8 @@ class Component(ComponentBase):
                             normalized_col = parent_column.replace(".", "_")
                             if normalized_col in parent_df.columns:
                                 return parent_df[normalized_col].dropna().unique().tolist()
-            except Exception as e:
-                logging.warning(f"Error reading parent table {parent_table}: {e}")
+            except Exception:
+                logging.warning(f"Error reading parent table {parent_table}")
 
         return []
 
@@ -331,8 +331,10 @@ if __name__ == "__main__":
         # this triggers the run method by default and is controlled by the configuration.action parameter
         comp.execute_action()
     except UserException as exc:
-        logging.exception(exc)
+        # Use logging.error instead of logging.exception to avoid exposing sensitive data in tracebacks
+        logging.error(str(exc))
         exit(1)
     except Exception as exc:
-        logging.exception(exc)
+        # Log only the exception type and a generic message, not the full traceback
+        logging.error(f"Unexpected error: {type(exc).__name__}")
         exit(2)
