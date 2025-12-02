@@ -150,6 +150,461 @@ DEFAULT_TABLE_CONFIGS: dict[str, TableConfig] = {
         list_of_dicts_columns=[],
         no_prefix_columns=[]
     ),
+    "accounts": TableConfig(
+        name="accounts",
+        requested_json="accounts",
+        columns=[
+            "name", "title", "description", "type", "phone", "email", "website",
+            "address", "city", "zip", "country", "user.name", "user.title",
+            "edited", "created"
+        ],
+        filters=[{"field": "edited", "operator": "gte", "value": None}],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["user.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "calls": TableConfig(
+        name="calls",
+        requested_json="calls",
+        columns=[
+            "name", "clid", "did", "direction", "disposition", "duration", "billsec",
+            "recording", "queue.name", "queue.title", "user.name", "user.title",
+            "contact.name", "contact.title", "edited", "created"
+        ],
+        filters=[{"field": "edited", "operator": "gte", "value": None}],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["queue.name", "user.name", "contact.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "records": TableConfig(
+        name="records",
+        requested_json="records",
+        columns=[
+            "name", "title", "description", "status", "contact.name", "contact.title",
+            "account.name", "account.title", "user.name", "user.title",
+            "edited", "created"
+        ],
+        filters=[{"field": "edited", "operator": "gte", "value": None}],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["contact.name", "account.name", "user.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "statuses": TableConfig(
+        name="statuses",
+        requested_json="statuses",
+        columns=[
+            "name", "title", "type", "color", "default", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "categories": TableConfig(
+        name="categories",
+        requested_json="categories",
+        columns=[
+            "name", "title", "description", "type", "parent.name", "parent.title",
+            "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["parent.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "emails": TableConfig(
+        name="emails",
+        requested_json="emails",
+        columns=[
+            "name", "subject", "from", "to", "cc", "bcc", "body", "direction",
+            "status", "queue.name", "queue.title", "user.name", "user.title",
+            "contact.name", "contact.title", "ticket.name", "ticket.title",
+            "edited", "created"
+        ],
+        filters=[{"field": "edited", "operator": "gte", "value": None}],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["queue.name", "user.name", "contact.name", "ticket.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "chats": TableConfig(
+        name="chats",
+        requested_json="chats",
+        columns=[
+            "name", "message", "direction", "status", "queue.name", "queue.title",
+            "user.name", "user.title", "contact.name", "contact.title",
+            "edited", "created"
+        ],
+        filters=[{"field": "edited", "operator": "gte", "value": None}],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["queue.name", "user.name", "contact.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "sms": TableConfig(
+        name="sms",
+        requested_json="sms",
+        columns=[
+            "name", "text", "from", "to", "direction", "status",
+            "user.name", "user.title", "contact.name", "contact.title",
+            "edited", "created"
+        ],
+        filters=[{"field": "edited", "operator": "gte", "value": None}],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["user.name", "contact.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "devices": TableConfig(
+        name="devices",
+        requested_json="devices",
+        columns=[
+            "name", "title", "type", "extension", "user.name", "user.title",
+            "status", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["user.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "profiles": TableConfig(
+        name="profiles",
+        requested_json="profiles",
+        columns=[
+            "name", "title", "description", "permissions", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=["permissions"],
+        no_prefix_columns=[]
+    ),
+    "pauses": TableConfig(
+        name="pauses",
+        requested_json="pauses",
+        columns=[
+            "name", "title", "description", "type", "productive", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "skills": TableConfig(
+        name="skills",
+        requested_json="skills",
+        columns=[
+            "name", "title", "description", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "groups": TableConfig(
+        name="groups",
+        requested_json="groups",
+        columns=[
+            "name", "title", "description", "members", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=["members"],
+        no_prefix_columns=[]
+    ),
+    "fields": TableConfig(
+        name="fields",
+        requested_json="fields",
+        columns=[
+            "name", "title", "type", "entity", "required", "options", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=["options"],
+        no_prefix_columns=[]
+    ),
+    "forms": TableConfig(
+        name="forms",
+        requested_json="forms",
+        columns=[
+            "name", "title", "description", "type", "fields", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=["fields"],
+        no_prefix_columns=[]
+    ),
+    "templates": TableConfig(
+        name="templates",
+        requested_json="templates",
+        columns=[
+            "name", "title", "type", "subject", "body", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "schedules": TableConfig(
+        name="schedules",
+        requested_json="schedules",
+        columns=[
+            "name", "title", "description", "timezone", "rules", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=["rules"],
+        no_prefix_columns=[]
+    ),
+    "holidays": TableConfig(
+        name="holidays",
+        requested_json="holidays",
+        columns=[
+            "name", "title", "date", "recurring", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "recordings": TableConfig(
+        name="recordings",
+        requested_json="recordings",
+        columns=[
+            "name", "duration", "call.name", "user.name", "user.title",
+            "url", "edited", "created"
+        ],
+        filters=[{"field": "edited", "operator": "gte", "value": None}],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["call.name", "user.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "files": TableConfig(
+        name="files",
+        requested_json="files",
+        columns=[
+            "name", "title", "filename", "size", "mime", "url",
+            "ticket.name", "ticket.title", "edited", "created"
+        ],
+        filters=[{"field": "edited", "operator": "gte", "value": None}],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["ticket.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "notes": TableConfig(
+        name="notes",
+        requested_json="notes",
+        columns=[
+            "name", "text", "user.name", "user.title", "ticket.name", "ticket.title",
+            "contact.name", "contact.title", "edited", "created"
+        ],
+        filters=[{"field": "edited", "operator": "gte", "value": None}],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["user.name", "ticket.name", "contact.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "activities_statuses": TableConfig(
+        name="activities_statuses",
+        requested_json="activities_statuses",
+        columns=[
+            "name", "title", "type", "category", "color", "icon", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "activities_call": TableConfig(
+        name="activities_call",
+        requested_json=ChildTableConfig(
+            parent="activities",
+            child="call",
+            requirements=TableRequirements(table="activities", column="name")
+        ),
+        columns=[
+            "name", "clid", "did", "direction", "disposition", "duration", "billsec",
+            "recording", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "activities_email": TableConfig(
+        name="activities_email",
+        requested_json=ChildTableConfig(
+            parent="activities",
+            child="email",
+            requirements=TableRequirements(table="activities", column="name")
+        ),
+        columns=[
+            "name", "subject", "from", "to", "cc", "bcc", "body", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "activities_chat": TableConfig(
+        name="activities_chat",
+        requested_json=ChildTableConfig(
+            parent="activities",
+            child="chat",
+            requirements=TableRequirements(table="activities", column="name")
+        ),
+        columns=[
+            "name", "message", "channel", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "activities_sms": TableConfig(
+        name="activities_sms",
+        requested_json=ChildTableConfig(
+            parent="activities",
+            child="sms",
+            requirements=TableRequirements(table="activities", column="name")
+        ),
+        columns=[
+            "name", "text", "from", "to", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "tickets_categories": TableConfig(
+        name="tickets_categories",
+        requested_json="tickets/categories",
+        columns=[
+            "name", "title", "description", "parent.name", "parent.title", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=["parent.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "contacts_custom_fields": TableConfig(
+        name="contacts_custom_fields",
+        requested_json="contacts/custom_fields",
+        columns=[
+            "name", "title", "type", "value", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "accounts_custom_fields": TableConfig(
+        name="accounts_custom_fields",
+        requested_json="accounts/custom_fields",
+        columns=[
+            "name", "title", "type", "value", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["name"],
+        secondary_keys=[],
+        keys=[],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
+    "users_queues": TableConfig(
+        name="users_queues",
+        requested_json="users/queues",
+        columns=[
+            "user.name", "queue.name", "queue.title", "priority", "edited", "created"
+        ],
+        filters=[],
+        primary_keys=["user.name", "queue.name"],
+        secondary_keys=[],
+        keys=["user.name", "queue.name"],
+        list_columns=[],
+        list_of_dicts_columns=[],
+        no_prefix_columns=[]
+    ),
 }
 
 

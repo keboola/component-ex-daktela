@@ -31,7 +31,7 @@ class Component(ComponentBase):
 
     SPECIAL_TABLES: set[str] = {"activities", "activities_statuses"}
     TABLES_WITH_REQUIREMENTS: set[str] = {
-        "activities_call", "activities_email", "activities_chat"
+        "activities_call", "activities_email", "activities_chat", "activities_sms"
     }
 
     def __init__(self):
@@ -127,7 +127,7 @@ class Component(ComponentBase):
                 await self._extract_child_table(client, table_name)
 
     async def _extract_table(self, client: DaktelaClient, table_name: str) -> None:
-        """Extract a standard table."""
+        """Extract a standard table using streaming to avoid memory issues."""
         table_config = get_table_config(table_name)
         if not table_config:
             return
@@ -137,23 +137,31 @@ class Component(ComponentBase):
         filters = self._prepare_filters(table_config)
         api_table_name = table_config.get_api_table_name()
 
-        data = await client.extract_table(
+        # Get async generator from client
+        data_generator = client.extract_table(
             api_table_name,
             filters=filters,
             fields=table_config.columns if table_config.columns else None
         )
 
+        # Create transformer and process data in streaming fashion
         transformer = DataTransformer(self.server_name, table_config)
-        transformed_data = transformer.transform(data)
 
-        # Track parent IDs for this table and write output
-        self._write_output_stream(table_name, transformed_data, table_config)
+        # Convert async generator to regular generator by consuming it
+        async def process_data():
+            async for row in data_generator:
+                # Transform each row and yield results
+                for transformed_row in transformer.transform([row]):
+                    yield transformed_row
+
+        # Write output using the async generator
+        await self._write_output_stream_async(table_name, process_data(), table_config)
 
         elapsed = time.time() - start_time
         logging.info(f"Table {table_name}: finished. Time elapsed: {elapsed:.2f} seconds.")
 
     async def _extract_child_table(self, client: DaktelaClient, table_name: str) -> None:
-        """Extract a child table that depends on parent table."""
+        """Extract a child table using streaming to avoid memory issues."""
         table_config = get_table_config(table_name)
         if not table_config or not table_config.has_requirements():
             return
@@ -172,16 +180,25 @@ class Component(ComponentBase):
             logging.warning(f"No valid parent IDs for table {table_name}. Skipping.")
             return
 
-        data = await client.extract_child_table(
+        # Get async generator from client
+        data_generator = client.extract_child_table(
             table_config.get_api_table_name(),
             valid_parent_ids,
             child_table
         )
 
+        # Create transformer and process data in streaming fashion
         transformer = DataTransformer(self.server_name, table_config)
-        transformed_data = transformer.transform(data)
 
-        self._write_output_stream(table_name, transformed_data, table_config)
+        # Convert async generator to regular generator by consuming it
+        async def process_data():
+            async for row in data_generator:
+                # Transform each row and yield results
+                for transformed_row in transformer.transform([row]):
+                    yield transformed_row
+
+        # Write output using the async generator
+        await self._write_output_stream_async(table_name, process_data(), table_config)
 
         elapsed = time.time() - start_time
         logging.info(f"Table {table_name}: finished. Time elapsed: {elapsed:.2f} seconds.")
@@ -253,13 +270,13 @@ class Component(ComponentBase):
         content = file_handle.read().replace('\0', '')
         return json.loads(content)
 
-    def _write_output_stream(
+    async def _write_output_stream_async(
         self,
         table_name: str,
         data_generator,
         table_config: TableConfig
     ) -> None:
-        """Write transformed data to CSV using ElasticDictWriter."""
+        """Write transformed data to CSV using streaming to avoid memory issues."""
         output_name = f"{self.server_name}_{table_name}.csv"
         output_path = Path(self.tables_out_path) / output_name
 
@@ -268,20 +285,24 @@ class Component(ComponentBase):
 
         row_count = 0
         parent_ids_tracking = {}
-        fieldnames = []
 
         try:
-            # Collect rows and determine fieldnames dynamically
-            rows = []
-            for row in data_generator:
-                rows.append(row)
+            # ElasticDictWriter handles dynamic fieldnames automatically
+            # We just write rows as they come without accumulating in memory
+            writer = None
+            first_row = True
 
-                # Track new fieldnames
-                for key in row.keys():
-                    if key not in fieldnames:
-                        fieldnames.append(key)
+            async for row in data_generator:
+                # Initialize writer with first row's keys
+                if first_row:
+                    writer = ElasticDictWriter(str(output_path), fieldnames=list(row.keys()))
+                    first_row = False
 
-                # Track parent IDs for later use
+                # Write row immediately (streaming)
+                writer.writerow(row)
+                row_count += 1
+
+                # Track parent IDs for later use (minimal memory footprint)
                 for key, value in row.items():
                     if value and value != "":
                         if key not in parent_ids_tracking:
@@ -292,15 +313,9 @@ class Component(ComponentBase):
                 if table_name == "activities":
                     self._track_invalid_activity_from_row(row, table_config)
 
-            if not rows:
+            if row_count == 0:
                 logging.warning(f"No data extracted for table {table_name}")
                 return
-
-            # Write using ElasticDictWriter
-            writer = ElasticDictWriter(str(output_path), fieldnames=fieldnames)
-            for row in rows:
-                writer.writerow(row)
-                row_count += 1
 
             # Store parent IDs for this table
             self.extracted_parent_ids[table_name] = parent_ids_tracking
